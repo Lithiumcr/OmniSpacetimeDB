@@ -2,19 +2,19 @@
 
 # Omni-Paxos Spacetime DB - Rust Implementation
 
-## Team Members (Alphabetical order by last name):
+## Team Members (Alphabetical order by last name)
 1. **Changrong Li**
 2. **Duc Minh Pham**
 3. **Ziyi Wang**
 
-## Project Overview:
+## Project Overview
 This repository contains the implementation of a distributed database intended for a MMO game (Bitcraft), a project developed as part of the advanced distributed systems course. It is built upon the foundation provided by the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB) project, licensed under GPLv3.
 
-## Directory Structure:
+## Directory Structure
 - **src/:** Contains the source code for the Omni-Paxos Spacetime DB implementation.
 - **docs/:** Documentation related to the project.
 - **tests/:** Unit tests and integration tests for the implemented components.
-- **figures/:** Figures for visualisation.
+- **figures/** Figures for visualisation.
 
 ```lua
 OmniSpacetimeDB
@@ -46,12 +46,12 @@ OmniSpacetimeDB
 └── ...
 ```
 
-## Getting Started:
+## Getting Started
 To get started with the project, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone [repository-url]
+   git clone https://github.com/Lithiumcr/OmniSpacetimeDB.git
    ```
 
 2. Build the project:
@@ -65,7 +65,7 @@ To get started with the project, follow these steps:
    cargo test
    ```
 
-## Contribution Guidelines:
+## Contribution Guidelines
 
 1. Fork the repository.
 2. Create a new branch for your feature/bugfix: `git checkout -b feature-name`.
@@ -73,8 +73,8 @@ To get started with the project, follow these steps:
 4. Push to the branch: `git push origin feature-name`.
 5. Create a pull request with detailed information on your changes.
 
-## Contact:
+## Contact
 For any inquiries or discussions related to the project, please feel free to contact the team members.
 
-## Credits:
+## Credits
 This project is based on the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB) project by Clockwork Labs, licensed under GPLv3. We appreciate their contribution to the open-source community.
