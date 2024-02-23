@@ -1,0 +1,59 @@
+# Rust related files
+/target/
+Cargo.lock
+**/*.rs.bk
+
+# VS Code related files
+.vscode/
+
+# IntelliJ IDEA related files
+.idea/
+
+# Compiled files
+**/*.rs.bk
+**/*.rlib
+**/*.rmeta
+**/*.rmeta.json
+
+# Cargo files
+.cargo/
+
+# Node Modules
+node_modules/
+
+# Rustdoc generated files
+doc/
+
+# Mac OS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Visual Studio Code directory settings
+.vscode/
+
+# Rust Language Server
+rls/
+
+# JetBrains
+*.iml
+*.ipr
+*.iws
+.idea/
+*.clion/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+*.mst
+
+# Windows shortcuts
+*.lnk
+
+# Package files
+*.npm
+*.yarn
+*.yarn-integrity
