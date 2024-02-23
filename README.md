@@ -1,2 +1,82 @@
-# OmniSpacetimeDB
-Project dir for ID2203 VT24 P3
+---
+Project dir for ID2203 VT24 P3: OmniPaxos x SpaceTimeDB
+---
+
+# Omni-Paxos Spacetime DB - Rust Implementation
+
+## Team Members (Alphabetical order by last name):
+1. **Changrong Li**
+2. **Duc Minh Pham**
+3. **Ziyi Wang**
+
+## Project Overview:
+This repository contains the implementation of a distributed database intended for a MMO game (Bitcraft), a project developed as part of the advanced distributed systems course. It is built upon the foundation provided by the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB) project, licensed under GPLv3.
+
+## Directory Structure:
+- **src/:** Contains the source code for the Omni-Paxos Spacetime DB implementation.
+- **docs/:** Documentation related to the project.
+- **tests/:** Unit tests and integration tests for the implemented components.
+- **figures/:** Figures for visualisation.
+
+OmniSpacetimeDB
+├── src
+│   ├── datastore
+│   │   ├── example_datastore.rs
+│   │   ├── mod.rs
+│   │   └── ...
+│   ├── durability
+│   │   ├── example_durability.rs
+│   │   ├── omnipaxos_durability.rs
+│   │   ├── mod.rs
+│   │   └── ...
+│   ├── node
+│   │   ├── mod.rs
+│   │   └── ...
+│   └── main.rs
+├── tests
+│   ├── datastore_tests.rs
+│   ├── durability_tests.rs
+│   └── node_tests.rs
+├── figures
+│   ├── figure1.webp
+│   ├── figure2.webp
+│   └── figure3.webp
+├── Cargo.toml
+├── README.md
+├── .gitignore
+└── ...
+
+## Getting Started:
+To get started with the project, follow these steps:
+
+1. Clone the repository:
+   ```bash
+   git clone [repository-url]
+   ```
+
+2. Build the project:
+   ```bash
+   cd OmniPaxos-Spacetime-DB-Rust
+   cargo build
+   ```
+
+3. Run tests:
+   ```bash
+   cargo test
+   ```
+
+4. [Add any additional steps or dependencies as needed]
+
+## Contribution Guidelines:
+
+1. Fork the repository.
+2. Create a new branch for your feature/bugfix: `git checkout -b feature-name`.
+3. Commit your changes: `git commit -m 'Add a descriptive commit message'`.
+4. Push to the branch: `git push origin feature-name`.
+5. Create a pull request with detailed information on your changes.
+
+## Contact:
+For any inquiries or discussions related to the project, please feel free to contact the team members.
+
+## Credits:
+This project is based on the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB) project by Clockwork Labs, licensed under GPLv3. We appreciate their contribution to the open-source community.
