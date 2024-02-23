@@ -1,4 +1,4 @@
-> Project dir for ID2203 VT24 P3: OmniPaxos x SpaceTimeDB
+> Project repository for ID2203 VT24 P3: OmniPaxos x SpaceTimeDB
 
 # Omni-Paxos Spacetime DB - Rust Implementation
 
@@ -8,11 +8,10 @@
 3. **Ziyi Wang**
 
 ## Project Overview
-This repository contains the implementation of a distributed database intended for a MMO game (Bitcraft), a project developed as part of the advanced distributed systems course. It is built upon the foundation provided by the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB) project, licensed under GPLv3.
+This repository contains the implementation of a distributed database intended for a MMO game (Bitcraft), a project developed as part of the advanced distributed systems course. It is built upon the foundation provided by the [SpacetimeDB](https://github.com/clockworklabs/SpacetimeDB).
 
 ## Directory Structure
 - **src/:** Contains the source code for the Omni-Paxos Spacetime DB implementation.
-- **docs/:** Documentation related to the project.
 - **tests/:** Unit tests and integration tests for the implemented components.
 - **figures/** Figures for visualisation.
 
