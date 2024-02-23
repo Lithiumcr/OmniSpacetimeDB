@@ -1,6 +1,4 @@
----
-Project dir for ID2203 VT24 P3: OmniPaxos x SpaceTimeDB
----
+> Project dir for ID2203 VT24 P3: OmniPaxos x SpaceTimeDB
 
 # Omni-Paxos Spacetime DB - Rust Implementation
 
@@ -18,6 +16,7 @@ This repository contains the implementation of a distributed database intended f
 - **tests/:** Unit tests and integration tests for the implemented components.
 - **figures/:** Figures for visualisation.
 
+```lua
 OmniSpacetimeDB
 ├── src
 │   ├── datastore
@@ -45,6 +44,7 @@ OmniSpacetimeDB
 ├── README.md
 ├── .gitignore
 └── ...
+```
 
 ## Getting Started:
 To get started with the project, follow these steps:
@@ -64,8 +64,6 @@ To get started with the project, follow these steps:
    ```bash
    cargo test
    ```
-
-4. [Add any additional steps or dependencies as needed]
 
 ## Contribution Guidelines:
 
