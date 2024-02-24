@@ -67,10 +67,12 @@ To get started with the project, follow these steps:
 ## Contribution Guidelines
 
 1. Fork the repository.
-2. Create a new branch for your feature/bugfix: `git checkout -b feature-name`.
-3. Commit your changes: `git commit -m 'Add a descriptive commit message'`.
-4. Push to the branch: `git push origin feature-name`.
-5. Create a pull request with detailed information on your changes.
+2. Switch to develop branch: `git checkout develop`.
+3. Create a new branch for your feature/bugfix: `git checkout -b feature-name`.
+4. Commit your changes: `git commit -m 'Add a descriptive commit message'`.
+5. Push to the branch: `git push origin feature-name`.
+6. Create a pull request with detailed information on your changes and merge to develop.
+7. After testing on develop, create a pull request to merge to main.
 
 ## Contact
 For any inquiries or discussions related to the project, please feel free to contact the team members.
