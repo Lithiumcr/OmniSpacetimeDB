@@ -29,6 +29,8 @@ doc/
 
 # Windows
 Thumbs.db
+.devcontainer/
+.github/
 
 # Visual Studio Code directory settings
 .vscode/
