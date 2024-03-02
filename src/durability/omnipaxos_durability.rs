@@ -1,5 +1,8 @@
 use super::*;
 
+use crate::datastore::{tx_data::TxData, TxOffset};
+use self::example_durability::ExampleDurabilityLayer;
+
 /// OmniPaxosDurability is a OmniPaxos node that should provide the replicated
 /// implementation of the DurabilityLayer trait required by the Datastore.
 pub struct OmniPaxosDurability {
@@ -23,6 +26,6 @@ impl DurabilityLayer for OmniPaxosDurability {
     }
 
     fn get_durable_tx_offset(&self) -> TxOffset {
-        todo!()
+
     }
 }
