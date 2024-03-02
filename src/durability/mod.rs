@@ -12,10 +12,6 @@ pub enum DurabilityLevel {
 #[derive(Debug, Copy, Clone)]
 pub struct ObserverId(u64);
 
-pub trait DurabilityObserver {
-    fn advance_durability_offset(&self, tx_offset: TxOffset);
-}
-
 pub trait DurabilityLayer {
     /// iterate through the log from start
     fn iter(&self) -> Box<dyn Iterator<Item = (TxOffset, TxData)>>;
