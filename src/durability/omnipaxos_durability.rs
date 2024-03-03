@@ -1,4 +1,3 @@
-use crate::datastore::{tx_data::TxData, TxOffset};
 use super::*;
 
 use crate::datastore::{tx_data::TxData, TxOffset};
@@ -8,21 +7,6 @@ use self::example_durability::ExampleDurabilityLayer;
 /// implementation of the DurabilityLayer trait required by the Datastore.
 pub struct OmniPaxosDurability {
     // TODO
-    append_tx: Option<mpsc::Sender<LogEntry>>,
-    durable_offset: Arc<Mutex<Option<TxOffset>>>,
-    log_file: Arc<Mutex<Option<AsyncFile>>>,
-    filepath: String,
-}
-
-impl OmniPaxosDurability {
-    pub fn new(filepath: &str) -> Self {
-        OmniPaxosDurability {
-            append_tx: None,
-            durable_offset: Arc::new(Mutex::new(None)),
-            log_file: Arc::new(Mutex::new(None)),
-            filepath: filepath.to_string(),
-        }
-    }
 }
 
 impl DurabilityLayer for OmniPaxosDurability {
