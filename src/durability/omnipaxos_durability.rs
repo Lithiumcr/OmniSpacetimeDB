@@ -22,6 +22,5 @@ impl DurabilityLayer for OmniPaxosDurability {
         todo!()
     }
 
-    fn get_durable_tx_offset(&self) -> TxOffset {
-    }
+    fn get_durable_tx_offset(&self) -> TxOffset {}
 }
