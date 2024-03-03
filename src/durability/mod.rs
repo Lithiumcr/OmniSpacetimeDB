@@ -1,5 +1,4 @@
 pub mod example_durability;
-pub mod observer;
 pub mod omnipaxos_durability;
 
 use crate::datastore::{tx_data::TxData, TxOffset};
@@ -12,10 +11,6 @@ pub enum DurabilityLevel {
 
 #[derive(Debug, Copy, Clone)]
 pub struct ObserverId(u64);
-
-pub trait DurabilityObserver {
-    fn advance_durability_offset(&self, tx_offset: TxOffset);
-}
 
 pub trait DurabilityLayer {
     /// iterate through the log from start
