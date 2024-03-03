@@ -27,18 +27,18 @@ impl OmniPaxosDurability {
 
 impl DurabilityLayer for OmniPaxosDurability {
     fn iter(&self) -> Box<dyn Iterator<Item = (TxOffset, TxData)>> {
-        // Provide implementation here
+        todo!()
     }
 
     fn iter_starting_from_offset(
         &self,
         offset: TxOffset,
     ) -> Box<dyn Iterator<Item = (TxOffset, TxData)>> {
-        // Provide implementation here
+        todo!()
     }
 
     fn append_tx(&mut self, tx_offset: TxOffset, tx_data: TxData) {
-        // Provide implementation here
+        todo!()
     }
 
     fn get_durable_tx_offset(&self) -> TxOffset {
