@@ -28,7 +28,6 @@ pub struct NodeRunner {
     pub node: Arc<Mutex<Node>>,
     pub incoming: mpsc::Receiver<Message<Log>>,
     pub outgoing: HashMap<NodeId, mpsc::Sender<Message<Log>>>,
-    // TODO Messaging and running
 }
 
 impl NodeRunner {
@@ -138,17 +137,19 @@ mod tests {
     use crate::node::*;
     use omnipaxos::messages::Message;
     use omnipaxos::util::{LogEntry, NodeId};
+    use omnipaxos::util::NodeId;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use tokio::runtime::{Builder, Runtime};
     use tokio::sync::mpsc;
     use tokio::task::JoinHandle;
+<<<<<<< HEAD
     use crate::durability::omnipaxos_durability::Log;
-
-    const SERVERS: [NodeId; 3] = [1, 2, 3];
+=======
 
     #[allow(clippy::type_complexity)]
     fn initialise_channels() -> (
+<<<<<<< HEAD
         HashMap<NodeId, mpsc::Sender<Message<Log>>>,
         HashMap<NodeId, mpsc::Receiver<Message<Log>>>,
     ) {
@@ -173,6 +174,24 @@ mod tests {
 
     fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
         let mut nodes: HashMap<u64, (Arc<Mutex<Node>>, JoinHandle<()>)> = HashMap::new();
+=======
+        HashMap<NodeId, mpsc::Sender<Message<_>>>,
+        HashMap<NodeId, mpsc::Receiver<Message<_>>>,
+    ) {
+        todo!()
+    }
+
+    fn create_runtime() -> Runtime {
+        Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
+        let mut nodes = HashMap::new();
+>>>>>>> cbab674 (remove todo)
         let (sender_channels, mut receiver_channels) = initialise_channels();
         for pid in SERVERS {
             todo!("spawn the nodes")
