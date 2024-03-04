@@ -15,12 +15,12 @@ pub struct Log {
     tx_data: TxData,
 }
 
-pub type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
+type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
 
 /// OmniPaxosDurability is a OmniPaxos node that should provide the replicated
 /// implementation of the DurabilityLayer trait required by the Datastore.
 pub struct OmniPaxosDurability {
-    omni_paxos: OmniPaxosLog,
+    pub omni_paxos: OmniPaxosLog,
 }
 
 impl DurabilityLayer for OmniPaxosDurability {

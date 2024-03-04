@@ -4,7 +4,6 @@ use crate::datastore::tx_data::TxResult;
 use crate::datastore::*;
 use crate::durability::omnipaxos_durability::Log;
 use crate::durability::omnipaxos_durability::OmniPaxosDurability;
-use crate::durability::omnipaxos_durability::OmniPaxosLog;
 use crate::durability::{DurabilityLayer, DurabilityLevel};
 use omnipaxos::messages::{self, *};
 use omnipaxos::util::NodeId;
@@ -32,7 +31,13 @@ pub struct NodeRunner {
 
 impl NodeRunner {
     async fn send_outgoing_msgs(&mut self) {
-        let messages = self.node.lock().unwrap().omni_paxos.outgoing_messages();
+        let messages = self
+            .node
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .outgoing_messages();
         for msg in messages {
             let receiver = msg.get_receiver();
             let channel = self
@@ -51,13 +56,13 @@ impl NodeRunner {
                 biased;
 
                 _ = tick_interval.tick() => {
-                    self.node.lock().unwrap().omni_paxos.tick();
+                    self.node.lock().unwrap().omni_paxos_durability.omni_paxos.tick();
                 }
                 _ = outgoing_interval.tick() => {
                     self.send_outgoing_msgs().await;
                 }
                 Some(in_msg) = self.incoming.recv() => {
-                    self.node.lock().unwrap().omni_paxos.handle_incoming(in_msg);
+                    self.node.lock().unwrap().omni_paxos_durability.omni_paxos.handle_incoming(in_msg);
                 }
                 else => { }
             }
@@ -68,12 +73,19 @@ impl NodeRunner {
 pub struct Node {
     node_id: NodeId, // Unique identifier for the node
     // TODO Datastore and OmniPaxosDurability
-    omni_paxos: OmniPaxosLog,
+    omni_paxos_durability: OmniPaxosDurability,
+    data_store: ExampleDatastore,
 }
 
 impl Node {
     pub fn new(node_id: NodeId, omni_durability: OmniPaxosDurability) -> Self {
-        todo!()
+        let omni_paxos_durability = omni_durability;
+        let data_store = ExampleDatastore::new();
+        Node {
+            node_id,
+            omni_paxos_durability,
+            data_store,
+        }
     }
 
     /// update who is the current leader. If a follower becomes the leader,
@@ -81,7 +93,14 @@ impl Node {
     /// If a node loses leadership, it needs to rollback the txns committed in
     /// memory that have not been replicated yet.
     pub fn update_leader(&mut self) {
-        todo!()
+        let curr_leader = self.omni_paxos_durability.omni_paxos.get_current_leader();
+        if curr_leader == Some(self.node_id) {
+            self.apply_replicated_txns();
+        } else {
+            self.data_store
+                .rollback_to_replicated_durability_offset()
+                .expect("Failed to rollback");
+        }
     }
 
     /// Apply the transactions that have been decided in OmniPaxos to the Datastore.
@@ -124,49 +143,49 @@ impl Node {
     }
 }
 
-/// Your test cases should spawn up multiple nodes in tokio and cover the following:
-/// 1. Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
-/// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
-/// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
-/// Verify that the transaction was first committed in memory but later rolled back.
-/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? *NOTE* for this test you may need to modify the messaging logic.
-///
-/// A few helper functions to help structure your tests have been defined that you are welcome to use.
-#[cfg(test)]
-mod tests {
-    use crate::node::*;
-    use omnipaxos::messages::Message;
-    use omnipaxos::util::NodeId;
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
-    use tokio::runtime::{Builder, Runtime};
-    use tokio::sync::mpsc;
-    use tokio::task::JoinHandle;
+// /// Your test cases should spawn up multiple nodes in tokio and cover the following:
+// /// 1. Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
+// /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
+// /// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
+// /// Verify that the transaction was first committed in memory but later rolled back.
+// /// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? *NOTE* for this test you may need to modify the messaging logic.
+// ///
+// /// A few helper functions to help structure your tests have been defined that you are welcome to use.
+// #[cfg(test)]
+// mod tests {
+//     use crate::node::*;
+//     use omnipaxos::messages::Message;
+//     use omnipaxos::util::NodeId;
+//     use std::collections::HashMap;
+//     use std::sync::{Arc, Mutex};
+//     use tokio::runtime::{Builder, Runtime};
+//     use tokio::sync::mpsc;
+//     use tokio::task::JoinHandle;
 
-    const SERVERS: [NodeId; 3] = [1, 2, 3];
+//     const SERVERS: [NodeId; 3] = [1, 2, 3];
 
-    #[allow(clippy::type_complexity)]
-    fn initialise_channels() -> (
-        HashMap<NodeId, mpsc::Sender<Message<_>>>,
-        HashMap<NodeId, mpsc::Receiver<Message<_>>>,
-    ) {
-        todo!()
-    }
+//     #[allow(clippy::type_complexity)]
+//     fn initialise_channels() -> (
+//         HashMap<NodeId, mpsc::Sender<Message<_>>>,
+//         HashMap<NodeId, mpsc::Receiver<Message<_>>>,
+//     ) {
+//         todo!()
+//     }
 
-    fn create_runtime() -> Runtime {
-        Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()
-            .unwrap()
-    }
+//     fn create_runtime() -> Runtime {
+//         Builder::new_multi_thread()
+//             .worker_threads(4)
+//             .enable_all()
+//             .build()
+//             .unwrap()
+//     }
 
-    fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
-        let mut nodes = HashMap::new();
-        let (sender_channels, mut receiver_channels) = initialise_channels();
-        for pid in SERVERS {
-            todo!("spawn the nodes")
-        }
-        nodes
-    }
-}
+//     fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
+//         let mut nodes = HashMap::new();
+//         let (sender_channels, mut receiver_channels) = initialise_channels();
+//         for pid in SERVERS {
+//             todo!("spawn the nodes")
+//         }
+//         nodes
+//     }
+// }
