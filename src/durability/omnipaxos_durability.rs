@@ -10,12 +10,12 @@ use omnipaxos::*;
 use omnipaxos_storage::memory_storage::MemoryStorage;
 
 #[derive(Clone, Debug, Entry)]
-struct Log {
+pub struct Log {
     tx_offset: TxOffset,
     tx_data: TxData,
 }
 
-type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
+pub type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
 
 /// OmniPaxosDurability is a OmniPaxos node that should provide the replicated
 /// implementation of the DurabilityLayer trait required by the Datastore.
