@@ -73,7 +73,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(node_id: NodeId, omni_durability: OmniPaxosDurability) -> Self {
-        todo!();
+        todo!()
     }
 
     /// update who is the current leader. If a follower becomes the leader,
@@ -136,45 +136,17 @@ impl Node {
 mod tests {
     use crate::node::*;
     use omnipaxos::messages::Message;
-    use omnipaxos::util::{LogEntry, NodeId};
     use omnipaxos::util::NodeId;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use tokio::runtime::{Builder, Runtime};
     use tokio::sync::mpsc;
     use tokio::task::JoinHandle;
-<<<<<<< HEAD
-    use crate::durability::omnipaxos_durability::Log;
-=======
+
+    const SERVERS: [NodeId; 3] = [1, 2, 3];
 
     #[allow(clippy::type_complexity)]
     fn initialise_channels() -> (
-<<<<<<< HEAD
-        HashMap<NodeId, mpsc::Sender<Message<Log>>>,
-        HashMap<NodeId, mpsc::Receiver<Message<Log>>>,
-    ) {
-        let mut sender_channels: HashMap<u64, mpsc::Sender<Message<Log>>> = HashMap::new();
-        let mut receiver_channels: HashMap<u64, mpsc::Receiver<Message<Log>>> = HashMap::new();
-
-        for pid in SERVERS {
-            let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
-            sender_channels.insert(pid, sender);
-            receiver_channels.insert(pid, receiver);
-        }
-        (sender_channels, receiver_channels)
-    }
-
-    fn create_runtime() -> Runtime {
-        Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()
-            .unwrap()
-    }
-
-    fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
-        let mut nodes: HashMap<u64, (Arc<Mutex<Node>>, JoinHandle<()>)> = HashMap::new();
-=======
         HashMap<NodeId, mpsc::Sender<Message<_>>>,
         HashMap<NodeId, mpsc::Receiver<Message<_>>>,
     ) {
@@ -191,7 +163,6 @@ mod tests {
 
     fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
         let mut nodes = HashMap::new();
->>>>>>> cbab674 (remove todo)
         let (sender_channels, mut receiver_channels) = initialise_channels();
         for pid in SERVERS {
             todo!("spawn the nodes")
