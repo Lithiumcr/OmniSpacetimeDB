@@ -107,25 +107,36 @@ impl Node {
     /// We need to be careful with which nodes should do this according to desired
     /// behavior in the Datastore as defined by the application.
     fn apply_replicated_txns(&mut self) {
-        todo!()
+        let durable_tx_offset = self.omni_paxos_durability.get_durable_tx_offset();
+        let iter = self
+            .omni_paxos_durability
+            .iter_starting_from_offset(durable_tx_offset);
+        for (tx_offset, tx_data) in iter {
+            self.omni_paxos_durability.append_tx(tx_offset, tx_data);
+        }
     }
 
     pub fn begin_tx(
         &self,
         durability_level: DurabilityLevel,
     ) -> <ExampleDatastore as Datastore<String, String>>::Tx {
-        todo!()
+        self.data_store.begin_tx(durability_level)
     }
 
     pub fn release_tx(&self, tx: <ExampleDatastore as Datastore<String, String>>::Tx) {
-        todo!()
+        self.data_store.release_tx(tx)
     }
 
     /// Begins a mutable transaction. Only the leader is allowed to do so.
     pub fn begin_mut_tx(
         &self,
     ) -> Result<<ExampleDatastore as Datastore<String, String>>::MutTx, DatastoreError> {
-        todo!()
+        let leader = self.omni_paxos_durability.omni_paxos.get_current_leader();
+        if leader == Some(self.node_id) {
+            Ok(self.data_store.begin_mut_tx())
+        } else {
+            Err(DatastoreError::NotLeader)
+        }
     }
 
     /// Commits a mutable transaction. Only the leader is allowed to do so.
@@ -133,13 +144,21 @@ impl Node {
         &mut self,
         tx: <ExampleDatastore as Datastore<String, String>>::MutTx,
     ) -> Result<TxResult, DatastoreError> {
-        todo!()
+        let leader = self.omni_paxos_durability.omni_paxos.get_current_leader();
+        if leader == Some(self.node_id) {
+            let tx_result = self.data_store.commit_mut_tx(tx);
+            tx_result
+        } else {
+            Err(DatastoreError::NotLeader)
+        }
     }
 
     fn advance_replicated_durability_offset(
         &self,
     ) -> Result<(), crate::datastore::error::DatastoreError> {
-        todo!()
+        let durable_tx_offset = self.omni_paxos_durability.get_durable_tx_offset();
+        self.data_store
+            .advance_replicated_durability_offset(durable_tx_offset)
     }
 }
 
