@@ -9,6 +9,7 @@ use omnipaxos::messages::{self, *};
 use omnipaxos::util::NodeId;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::iter;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -108,12 +109,20 @@ impl Node {
     /// behavior in the Datastore as defined by the application.
     fn apply_replicated_txns(&mut self) {
         let durable_tx_offset = self.omni_paxos_durability.get_durable_tx_offset();
-        let iter = self
-            .omni_paxos_durability
-            .iter_starting_from_offset(durable_tx_offset);
-        for (tx_offset, tx_data) in iter {
-            self.omni_paxos_durability.append_tx(tx_offset, tx_data);
+        let replicated_txns = self.data_store.get_replicated_offset();
+        let leader = self.omni_paxos_durability.omni_paxos.get_current_leader();
+        if replicated_txns < Some(durable_tx_offset) && leader != Some(self.node_id) {
+            let iter = self
+                .omni_paxos_durability
+                .iter_starting_from_offset(durable_tx_offset);
+            for entry in iter {
+                self.data_store.replay_transaction(&entry.1).unwrap();
+            }
         }
+
+        // after we have replayed the transactions we advance the durable offset in the Datastore
+        self.advance_replicated_durability_offset()
+            .expect("Failed to advance durable offset");
     }
 
     pub fn begin_tx(
@@ -179,7 +188,7 @@ mod tests {
     use crate::node::tx_data::InsertList;
     use crate::node::tx_data::RowData;
     use crate::node::tx_data::TxData;
-    use crate::node::*;
+    use crate::{durability, node::*};
     use omnipaxos::messages::Message;
     use omnipaxos::util::{ConfigurationId, LogEntry, NodeId};
     use omnipaxos::{ClusterConfig, OmniPaxosConfig, ServerConfig};
@@ -270,11 +279,11 @@ mod tests {
             .omni_paxos
             .get_current_leader()
             .expect("No leader elected");
-        // .lock().unwrap().get_current_leader().expect("No leader elected");
+
         println!("Leader elected: {}", leader);
 
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        let (follower_server, _) = op_server_handle.get(follower).unwrap();
+        let (follower_servers, _) = op_server_handle.get(follower).unwrap();
 
         // test txns
         let txo1: TxOffset = TxOffset(1);
@@ -315,31 +324,61 @@ mod tests {
             truncs: Arc::new([TableId(9)]),
         };
 
-        let log1 = Log::new(txo1, txd1);
-        let log2 = Log::new(txo2, txd2);
-        let log3 = Log::new(txo3, txd3);
+        // let log1 = Log::new(txo1, txd1);
+        // let log2 = Log::new(txo2, txd2);
+        // let log3 = Log::new(txo3, txd3);
 
-        println!("Adding value: {:?} via server {}", log1, follower);
-        follower_server
-            .lock()
-            .unwrap()
-            .omni_paxos_durability
-            .omni_paxos
-            .append(log1)
-            .expect("Failed to append to OmniPaxos log");
-        println!("Adding value: {:?} via server {}", log2, leader);
+        // println!("Adding value: {:?} via server {}", log1, follower);
+
+        // println!("Adding value: {:?} via server {}", log2, leader);
         let (leader_server, leader_join_handle) = op_server_handle.get(&leader).unwrap();
-        leader_server
+
+        // begin a mutable transaction
+        let mut tx1 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx1.set("foo".to_string(), "bar".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx1.get(&"foo".to_string())
+        );
+        let result = leader_server.lock().unwrap().commit_mut_tx(tx1).unwrap();
+        println!("Result of mutable transaction: {:?}", result);
+
+        // append a transaction to the OmniPaxos log
+        let tx_result = leader_server
             .lock()
             .unwrap()
             .omni_paxos_durability
-            .omni_paxos
-            .append(log2)
-            .expect("Failed to append to OmniPaxos log");
+            .append_tx(leader_server.lock().unwrap().omni_paxos_durability.get_durable_tx_offset(), tx1.clone());
+        println!("Result of appending to OmniPaxos log: {:?}", tx_result);
 
         std::thread::sleep(WAIT_DECIDED_TIMEOUT);
 
-        let committed_ents = follower_server
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+        follower_servers.lock().unwrap().apply_replicated_txns();
+
+        leader_server.lock().unwrap().apply_replicated_txns();
+
+        // assert that the replicated offset is the same for all nodes
+        assert_eq!(
+            follower_servers
+                .lock()
+                .unwrap()
+                .data_store
+                .get_replicated_offset(),
+            leader_server
+                .lock()
+                .unwrap()
+                .data_store
+                .get_replicated_offset()
+        );
+
+        let committed_ents = follower_servers
             .lock()
             .unwrap()
             .omni_paxos_durability
@@ -358,7 +397,7 @@ mod tests {
         leader_join_handle.abort();
         // wait for new leader to be elected...
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
-        let leader = follower_server
+        let leader = follower_servers
             .lock()
             .unwrap()
             .omni_paxos_durability
@@ -367,18 +406,28 @@ mod tests {
             .expect("No leader elected");
         println!("New leader elected: {}", leader);
 
-        println!("Adding value: {:?} via server {}", log3, leader);
         let (leader_server, _) = op_server_handle.get(&leader).unwrap();
+        // update the leader and follower servers
+        leader_server.lock().unwrap().update_leader();
+        follower_servers.lock().unwrap().update_leader();
+
+        let mut tx3 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx3.set("duc".to_string(), "bar".to_string());
+        // let (leader_server, _) = op_server_handle.get(&leader).unwrap();
         leader_server
             .lock()
             .unwrap()
             .omni_paxos_durability
-            .omni_paxos
-            .append(log3)
-            .expect("Failed to append to OmniPaxos log");
+            .append_tx(txo3, txd3.clone());
 
         std::thread::sleep(WAIT_DECIDED_TIMEOUT);
-        let committed_ents = follower_server
+
+        let committed_ents = follower_servers
             .lock()
             .unwrap()
             .omni_paxos_durability
@@ -393,7 +442,6 @@ mod tests {
             // ignore uncommitted entries
         }
 
-        // HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>
         op_server_handle
     }
 
