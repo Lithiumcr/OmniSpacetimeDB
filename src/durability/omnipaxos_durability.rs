@@ -1,6 +1,5 @@
 use super::*;
 
-
 use crate::datastore::{tx_data::TxData, TxOffset};
 
 use super::DurabilityLayer;
@@ -15,7 +14,13 @@ pub struct Log {
     tx_data: TxData,
 }
 
-type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
+impl Log {
+    pub fn new(tx_offset: TxOffset, tx_data: TxData) -> Self {
+        Log { tx_offset, tx_data }
+    }
+}
+
+pub type OmniPaxosLog = OmniPaxos<Log, MemoryStorage<Log>>;
 
 /// OmniPaxosDurability is a OmniPaxos node that should provide the replicated
 /// implementation of the DurabilityLayer trait required by the Datastore.
@@ -38,9 +43,7 @@ impl DurabilityLayer for OmniPaxosDurability {
         match read_entries {
             None => Box::new(std::iter::empty()), // Return an empty iterator if no entries are found
             Some(entries) => {
-                let iter = entries
-                .into_iter()
-                .map(|entry| match entry {
+                let iter = entries.into_iter().map(|entry| match entry {
                     OmniPaxosLogEntry::Decided(log) => (log.tx_offset.clone(), log.tx_data.clone()),
                     _ => panic!("Unexpected log entry type"),
                 });

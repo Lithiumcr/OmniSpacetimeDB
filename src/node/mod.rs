@@ -162,49 +162,245 @@ impl Node {
     }
 }
 
-// /// Your test cases should spawn up multiple nodes in tokio and cover the following:
-// /// 1. Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
-// /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
-// /// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
-// /// Verify that the transaction was first committed in memory but later rolled back.
-// /// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? *NOTE* for this test you may need to modify the messaging logic.
-// ///
-// /// A few helper functions to help structure your tests have been defined that you are welcome to use.
-// #[cfg(test)]
-// mod tests {
-//     use crate::node::*;
-//     use omnipaxos::messages::Message;
-//     use omnipaxos::util::NodeId;
-//     use std::collections::HashMap;
-//     use std::sync::{Arc, Mutex};
-//     use tokio::runtime::{Builder, Runtime};
-//     use tokio::sync::mpsc;
-//     use tokio::task::JoinHandle;
+/// Your test cases should spawn up multiple nodes in tokio and cover the following:
+/// 1. Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
+/// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
+/// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
+/// Verify that the transaction was first committed in memory but later rolled back.
+/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? *NOTE* for this test you may need to modify the messaging logic.
+///
+/// A few helper functions to help structure your tests have been defined that you are welcome to use.
+#[cfg(test)]
+mod tests {
+    use crate::datastore::tx_data::serde;
+    use crate::durability::omnipaxos_durability::Log;
+    use crate::durability::omnipaxos_durability::{self, OmniPaxosDurability};
+    use crate::node::tx_data::DeleteList;
+    use crate::node::tx_data::InsertList;
+    use crate::node::tx_data::RowData;
+    use crate::node::tx_data::TxData;
+    use crate::node::*;
+    use omnipaxos::messages::Message;
+    use omnipaxos::util::{ConfigurationId, LogEntry, NodeId};
+    use omnipaxos::{ClusterConfig, OmniPaxosConfig, ServerConfig};
+    use omnipaxos_storage::memory_storage::MemoryStorage;
+    use std::collections::HashMap;
+    use std::sync::mpsc::Receiver;
+    use std::sync::{Arc, Mutex};
+    use tokio::runtime::{Builder, Runtime};
+    use tokio::sync::mpsc;
+    use tokio::task::JoinHandle;
 
-//     const SERVERS: [NodeId; 3] = [1, 2, 3];
+    const SERVERS: [NodeId; 3] = [1, 2, 3];
 
-//     #[allow(clippy::type_complexity)]
-//     fn initialise_channels() -> (
-//         HashMap<NodeId, mpsc::Sender<Message<_>>>,
-//         HashMap<NodeId, mpsc::Receiver<Message<_>>>,
-//     ) {
-//         todo!()
-//     }
+    #[allow(clippy::type_complexity)]
+    fn initialise_channels() -> (
+        HashMap<NodeId, mpsc::Sender<Message<Log>>>,
+        HashMap<NodeId, mpsc::Receiver<Message<Log>>>,
+    ) {
+        let mut sender_channels: HashMap<u64, mpsc::Sender<Message<Log>>> = HashMap::new();
+        let mut receiver_channels: HashMap<u64, mpsc::Receiver<Message<Log>>> = HashMap::new();
 
-//     fn create_runtime() -> Runtime {
-//         Builder::new_multi_thread()
-//             .worker_threads(4)
-//             .enable_all()
-//             .build()
-//             .unwrap()
-//     }
+        for server_id in SERVERS {
+            let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
+            sender_channels.insert(server_id, sender);
+            receiver_channels.insert(server_id, receiver);
+        }
+        (sender_channels, receiver_channels)
+    }
 
-//     fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
-//         let mut nodes = HashMap::new();
-//         let (sender_channels, mut receiver_channels) = initialise_channels();
-//         for pid in SERVERS {
-//             todo!("spawn the nodes")
-//         }
-//         nodes
-//     }
-// }
+    fn create_runtime() -> Runtime {
+        Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    /// generate multiple nodes and store them in a HashMap, each node consisting of an Arc<Mutex<Node>> and a JoinHandle<()>.
+    fn spawn_nodes(runtime: &mut Runtime) -> HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)> {
+        let config_id = 1;
+        let mut op_server_handle = HashMap::new();
+        let (sender_channels, mut receiver_channels) = initialise_channels();
+
+        for server_id in SERVERS {
+            let server_config = ServerConfig {
+                pid: server_id,
+                election_tick_timeout: ELECTION_TICK_TIMEOUT,
+                ..Default::default()
+            };
+            let cluster_config = ClusterConfig {
+                configuration_id: config_id,
+                nodes: SERVERS.into(),
+                ..Default::default()
+            };
+            let op_config = OmniPaxosConfig {
+                server_config,
+                cluster_config,
+            };
+            let node: Arc<Mutex<Node>> = Arc::new(Mutex::new(
+                Node::new(
+                    server_id,
+                    OmniPaxosDurability {
+                        omni_paxos: op_config.build(MemoryStorage::default()).unwrap(),
+                    },
+                ), // op_config.build(MemoryStorage::default()).unwrap(),
+            ));
+            let mut op_server = NodeRunner {
+                node: Arc::clone(&node),
+                incoming: receiver_channels.remove(&server_id).unwrap(),
+                outgoing: sender_channels.clone(),
+            };
+            let join_handle: JoinHandle<()> = runtime.spawn({
+                async move {
+                    op_server.run().await;
+                }
+            });
+            op_server_handle.insert(server_id, (node, join_handle));
+        }
+
+        // wait for leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let (first_server, _) = op_server_handle.get(&1).unwrap();
+
+        let leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+        // .lock().unwrap().get_current_leader().expect("No leader elected");
+        println!("Leader elected: {}", leader);
+
+        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
+        let (follower_server, _) = op_server_handle.get(follower).unwrap();
+
+        // test txns
+        let txo1: TxOffset = TxOffset(1);
+        let txo2: TxOffset = TxOffset(2);
+        let txo3: TxOffset = TxOffset(3);
+
+        let txd1 = TxData {
+            inserts: Arc::new([InsertList {
+                table_id: TableId(1),
+                inserts: Arc::new([RowData(Arc::from([0u8, 1u8, 2u8]))]),
+            }]),
+            deletes: Arc::new([DeleteList {
+                table_id: TableId(2),
+                deletes: Arc::new([RowData(Arc::from([3u8, 4u8, 5u8]))]),
+            }]),
+            truncs: Arc::new([TableId(3)]),
+        };
+        let txd2 = TxData {
+            inserts: Arc::new([InsertList {
+                table_id: TableId(4),
+                inserts: Arc::new([RowData(Arc::from([6u8, 7u8, 8u8]))]),
+            }]),
+            deletes: Arc::new([DeleteList {
+                table_id: TableId(5),
+                deletes: Arc::new([RowData(Arc::from([9u8, 10u8, 11u8]))]),
+            }]),
+            truncs: Arc::new([TableId(6)]),
+        };
+        let txd3 = TxData {
+            inserts: Arc::new([InsertList {
+                table_id: TableId(7),
+                inserts: Arc::new([RowData(Arc::from([12u8, 13u8, 14u8]))]),
+            }]),
+            deletes: Arc::new([DeleteList {
+                table_id: TableId(8),
+                deletes: Arc::new([RowData(Arc::from([15u8, 16u8, 17u8]))]),
+            }]),
+            truncs: Arc::new([TableId(9)]),
+        };
+
+        let log1 = Log::new(txo1, txd1);
+        let log2 = Log::new(txo2, txd2);
+        let log3 = Log::new(txo3, txd3);
+
+        println!("Adding value: {:?} via server {}", log1, follower);
+        follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .append(log1)
+            .expect("Failed to append to OmniPaxos log");
+        println!("Adding value: {:?} via server {}", log2, leader);
+        let (leader_server, leader_join_handle) = op_server_handle.get(&leader).unwrap();
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .append(log2)
+            .expect("Failed to append to OmniPaxos log");
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+
+        let committed_ents = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .read_decided_suffix(0)
+            .expect("Failed to read from OmniPaxos log");
+
+        for ent in committed_ents {
+            if let LogEntry::Decided(log) = ent {
+                println!("Adding to simple log store: {:?}", log);
+            }
+            // ignore uncommitted entries
+        }
+
+        println!("Killing leader: {}...", leader);
+        leader_join_handle.abort();
+        // wait for new leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let leader = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+        println!("New leader elected: {}", leader);
+
+        println!("Adding value: {:?} via server {}", log3, leader);
+        let (leader_server, _) = op_server_handle.get(&leader).unwrap();
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .append(log3)
+            .expect("Failed to append to OmniPaxos log");
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+        let committed_ents = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .read_decided_suffix(2)
+            .expect("Failed to read from OmniPaxos log");
+
+        for ent in committed_ents {
+            if let LogEntry::Decided(log) = ent {
+                println!("Adding to simple log store: {:?}", log);
+            }
+            // ignore uncommitted entries
+        }
+
+        // HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>
+        op_server_handle
+    }
+
+    #[test]
+    fn test_spawn_nodes() {
+        let mut runtime = create_runtime();
+        let nodes = spawn_nodes(&mut runtime);
+        assert_eq!(nodes.len(), 3);
+    }
+}
