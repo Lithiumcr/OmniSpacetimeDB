@@ -354,7 +354,14 @@ mod tests {
             .lock()
             .unwrap()
             .omni_paxos_durability
-            .append_tx(leader_server.lock().unwrap().omni_paxos_durability.get_durable_tx_offset(), tx1.clone());
+            .append_tx(
+                leader_server
+                    .lock()
+                    .unwrap()
+                    .omni_paxos_durability
+                    .get_durable_tx_offset(),
+                tx1.clone(),
+            );
         println!("Result of appending to OmniPaxos log: {:?}", tx_result);
 
         std::thread::sleep(WAIT_DECIDED_TIMEOUT);
