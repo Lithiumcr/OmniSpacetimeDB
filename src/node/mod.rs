@@ -451,7 +451,11 @@ mod tests {
 
             for ent in committed_ents {
                 if let LogEntry::Decided(log) = ent {
-                    println!("Decided log: {:?}", log);
+                    println!(
+                        "Server: {:?}, Decided log: {:?}",
+                        server.0.lock().unwrap().node_id,
+                        log
+                    );
                 }
                 // ignore uncommitted entries
             }
