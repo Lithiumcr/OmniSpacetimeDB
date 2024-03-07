@@ -309,79 +309,6 @@ mod tests {
             op_server_handle.insert(server_id, (node, join_handle));
         }
 
-        // ********************************************************************************************************************
-        // println!("Killing leader: {}...", leader);
-        // leader_join_handle.abort();
-        // // wait for new leader to be elected...
-        // std::thread::sleep(WAIT_LEADER_TIMEOUT);
-
-        // let leader = follower_servers
-        //     .lock()
-        //     .unwrap()
-        //     .omni_paxos_durability
-        //     .omni_paxos
-        //     .get_current_leader()
-        //     .expect("No leader elected");
-        // println!("New leader elected: {}", leader);
-
-        // let (leader_server, _) = op_server_handle.get(&leader).unwrap();
-
-        // // update the leader and follower servers after the leader has been killed
-        // for server in op_server_handle.values() {
-        //     println!(
-        //         "Applying replicated txns: {:?}",
-        //         server.0.lock().unwrap().node_id
-        //     );
-        //     server.0.lock().unwrap().update_leader();
-        // }
-
-        // let mut tx3 = leader_server
-        //     .lock()
-        //     .unwrap()
-        //     .begin_mut_tx()
-        //     .expect("Failed to begin mutable transaction");
-
-        // tx3.set("duc".to_string(), "pham".to_string());
-
-        // println!(
-        //     "Committing mutable transaction: {:?}",
-        //     tx3.get(&"duc".to_string())
-        // );
-        // // begin a mutable transaction
-        // let result3 = leader_server.lock().unwrap().commit_mut_tx(tx3).unwrap();
-        // // let (leader_server, _) = op_server_handle.get(&leader).unwrap();
-        // leader_server
-        //     .lock()
-        //     .unwrap()
-        //     .omni_paxos_durability
-        //     .append_tx(result3.tx_offset, result3.tx_data);
-
-        // std::thread::sleep(WAIT_DECIDED_TIMEOUT);
-
-        // // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
-        // for server in op_server_handle.values() {
-        //     println!(
-        //         "Applying replicated txns: {:?}",
-        //         server.0.lock().unwrap().node_id
-        //     );
-        //     server.0.lock().unwrap().apply_replicated_txns();
-        // }
-
-        // let committed_ents = follower_servers
-        //     .lock()
-        //     .unwrap()
-        //     .omni_paxos_durability
-        //     .omni_paxos
-        //     .read_decided_suffix(2)
-        //     .expect("Failed to read from OmniPaxos log");
-
-        // for ent in committed_ents {
-        //     if let LogEntry::Decided(log) = ent {
-        //         println!("Adding to simple log store: {:?}", log);
-        //     }
-        //     // ignore uncommitted entries
-        // }
-
         op_server_handle
     }
 
@@ -415,7 +342,10 @@ mod tests {
         }
     }
 
-    fn print_replicated_txs(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
+    fn print_replicated_txs(
+        nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>,
+        key: &str,
+    ) {
         for server in nodes.values() {
             let tx = &server
                 .0
@@ -423,7 +353,7 @@ mod tests {
                 .unwrap()
                 .data_store
                 .begin_tx(DurabilityLevel::Replicated);
-            let value = tx.get(&"foo".to_string());
+            let value = tx.get(&key.to_string());
             println!(
                 "Server: {:?}, Data store(Replicated level): {:?}",
                 server.0.lock().unwrap().node_id,
@@ -454,7 +384,6 @@ mod tests {
         println!("Follower: {}", follower);
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
-        let (follower_server, _) = nodes.get(&follower).unwrap();
 
         // begin a mutable transaction
         let mut tx1 = leader_server
@@ -493,7 +422,7 @@ mod tests {
         }
 
         // check the data stores for all nodes
-        print_replicated_txs(&nodes);
+        print_replicated_txs(&nodes, "foo");
 
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
@@ -501,12 +430,11 @@ mod tests {
         // check that the committed transactions are the same for all nodes
         print_decided_log(&nodes);
     }
-
     /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
     #[test]
     fn test_2() {
         let mut runtime = create_runtime();
-        let nodes = spawn_nodes(&mut runtime);
+        let mut nodes = spawn_nodes(&mut runtime);
         assert_eq!(nodes.len(), 3);
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
         let (first_server, _) = nodes.get(&1).unwrap();
@@ -559,7 +487,7 @@ mod tests {
         }
 
         // check the data stores for all nodes
-        print_replicated_txs(&nodes);
+        print_replicated_txs(&nodes, "foo");
 
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
@@ -567,8 +495,33 @@ mod tests {
         // check that the committed transactions are the same for all nodes
         print_decided_log(&nodes);
 
+        // begin another mutable transaction
+        let mut tx2 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx2.set("sec".to_string(), "twice".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx2.get(&"sec".to_string())
+        );
+        let result2 = leader_server.lock().unwrap().commit_mut_tx(tx2).unwrap();
+
+        // append a transaction to the OmniPaxos log
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .append_tx(result2.tx_offset, result2.tx_data);
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+        //**************************************KILL THE LEADER************************************************************************** */
         println!("Killing leader: {}...", leader);
         leader_join_handle.abort();
+        //delete leader from nodes
         // wait for new leader to be elected...
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
 
@@ -581,28 +534,29 @@ mod tests {
             .expect("No leader elected");
         println!("New leader elected: {}", leader);
 
-        let (leader_server, _) = nodes.get(&leader).unwrap();
+        nodes.remove(&3);
 
         // update the leader and follower servers after the leader has been killed
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+
         for server in nodes.values() {
             println!(
-                "Applying replicated txns: {:?}",
+                "Check leader status for server: {:?}",
                 server.0.lock().unwrap().node_id
             );
             server.0.lock().unwrap().update_leader();
         }
 
-        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
-            println!(
-                "Applying replicated txns for server: {:?}",
-                server.0.lock().unwrap().node_id
-            );
+            // println!(
+            //     "Applying replicated txns for server: {:?}",
+            //     server.0.lock().unwrap().node_id
+            // );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
         // check the data stores for all nodes
-        print_replicated_txs(&nodes);
+        print_replicated_txs(&nodes, "sec");
 
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
