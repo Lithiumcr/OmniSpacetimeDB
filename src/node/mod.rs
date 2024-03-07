@@ -109,43 +109,33 @@ impl Node {
     /// behavior in the Datastore as defined by the application.
     fn apply_replicated_txns(&mut self) {
         let durable_tx_offset = self.omni_paxos_durability.get_durable_tx_offset();
-        let replicated_txns = self.data_store.get_replicated_offset();
+        let last_replicated_txns = self.data_store.get_replicated_offset();
         let leader = self.omni_paxos_durability.omni_paxos.get_current_leader();
 
-        // we need to advance the durable offset before we replay the transactions
-        self.advance_replicated_durability_offset()
-            .expect("Failed to advance durable offset");
-
-        if replicated_txns < Some(durable_tx_offset) && leader != Some(self.node_id) {
-            // println!(
-            //     "Replicated txns: {:?}, Durable tx offset: {:?}",
-            //     replicated_txns, durable_tx_offset
-            // );
-
-            println!(
-                "Current leader: {:?}, Current nodeId {:?}",
-                leader, self.node_id
-            );
-
+        // only the followers are allowed to replay transactions
+        // check that the last replicated txns is less than the durable offset
+        if last_replicated_txns < Some(durable_tx_offset) && leader != Some(self.node_id) {
             let iter: Box<dyn Iterator<Item = (TxOffset, tx_data::TxData)>>;
 
-            // check if replicated_txns is None
-            if replicated_txns.is_none() {
+            // check if replicated_txns is None then we need to start from the beginning of the log
+            if last_replicated_txns.is_none() {
                 iter = self.omni_paxos_durability.iter();
             } else {
                 iter = self
                     .omni_paxos_durability
-                    .iter_starting_from_offset(replicated_txns.unwrap());
+                    .iter_starting_from_offset(TxOffset(last_replicated_txns.unwrap().0 + 1));
             }
 
             for entry in iter {
-                println!("Replaying transactions: {:?}", entry);
-                println!("Data store: {:?}", self.data_store.get_cur_offset());
                 self.data_store
                     .replay_transaction(&entry.1)
                     .expect("Failed to replay transaction");
             }
         }
+
+        // advance the replicated offset for both the leader and the followers
+        self.advance_replicated_durability_offset()
+            .expect("Failed to advance durable offset");
     }
 
     pub fn begin_tx(
@@ -206,17 +196,12 @@ impl Node {
 mod tests {
     use crate::durability::omnipaxos_durability::Log;
     use crate::durability::omnipaxos_durability::OmniPaxosDurability;
-    // use crate::node::tx_data::DeleteList;
-    // use crate::node::tx_data::InsertList;
-    // use crate::node::tx_data::RowData;
-    // use crate::node::tx_data::TxData;
     use crate::node::*;
     use omnipaxos::messages::Message;
     use omnipaxos::util::{LogEntry, NodeId};
     use omnipaxos::{ClusterConfig, OmniPaxosConfig, ServerConfig};
     use omnipaxos_storage::memory_storage::MemoryStorage;
     use std::collections::HashMap;
-    // use std::sync::mpsc::Receiver;
     use std::sync::{Arc, Mutex};
     use tokio::runtime::{Builder, Runtime};
     use tokio::sync::mpsc;
@@ -387,7 +372,6 @@ mod tests {
 
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
         println!("Follower: {}", follower);
-        // let (follower_servers, _) = nodes.get(follower).unwrap();
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
 
@@ -425,7 +409,7 @@ mod tests {
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
             println!(
-                "Applying replicated txns: {:?}",
+                "Applying replicated txns for server: {:?}",
                 server.0.lock().unwrap().node_id
             );
             server.0.lock().unwrap().apply_replicated_txns();
@@ -440,10 +424,12 @@ mod tests {
                 .data_store
                 .begin_tx(DurabilityLevel::Replicated);
             let value = tx.get(&"foo".to_string());
-            println!("Data store: {:?}", value);
+            println!(
+                "Server: {:?}, Data store: {:?}",
+                server.0.lock().unwrap().node_id,
+                value
+            );
         }
-
-        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
 
         // check that replicated offset is the same for all nodes
         for server in nodes.values() {
