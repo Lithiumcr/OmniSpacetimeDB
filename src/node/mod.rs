@@ -208,11 +208,11 @@ impl Node {
 }
 
 /// Your test cases should spawn up multiple nodes in tokio and cover the following:
-/// 1. Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
+/// 1. Find the leader and commit a transaction. Show that the transaction is really chosen (according to our definition in Paxos) among the nodes.
 /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
 /// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
 /// Verify that the transaction was first committed in memory but later rolled back.
-/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? *NOTE* for this test you may need to modify the messaging logic.
+/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? NOTE for this test you may need to modify the messaging logic.
 ///
 /// A few helper functions to help structure your tests have been defined that you are welcome to use.
 #[cfg(test)]
@@ -374,7 +374,53 @@ mod tests {
         op_server_handle
     }
 
-    /// Find the leader and commit a transaction. Show that the transaction is really *chosen* (according to our definition in Paxos) among the nodes.
+    fn print_replicated_offset(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
+        for server in nodes.values() {
+            let replicated_tx = server.0.lock().unwrap().data_store.get_replicated_offset();
+            println!("Replicated offset: {:?}", replicated_tx);
+        }
+    }
+    fn print_decided_log(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
+        for server in nodes.values() {
+            let committed_ents = server
+                .0
+                .lock()
+                .unwrap()
+                .omni_paxos_durability
+                .omni_paxos
+                .read_decided_suffix(0)
+                .expect("Failed to read from OmniPaxos log");
+
+            for ent in committed_ents {
+                if let LogEntry::Decided(log) = ent {
+                    println!(
+                        "Server: {:?}, Decided log: {:?}",
+                        server.0.lock().unwrap().node_id,
+                        log
+                    );
+                }
+                // ignore uncommitted entries
+            }
+        }
+    }
+
+    fn print_replicated_txs(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
+        for server in nodes.values() {
+            let tx = &server
+                .0
+                .lock()
+                .unwrap()
+                .data_store
+                .begin_tx(DurabilityLevel::Replicated);
+            let value = tx.get(&"foo".to_string());
+            println!(
+                "Server: {:?}, Data store(Replicated level): {:?}",
+                server.0.lock().unwrap().node_id,
+                value
+            );
+        }
+    }
+    /// Find the leader and commit a transaction. Show that the transaction is really chosen (according to our definition in Paxos) among the nodes.
     #[test]
     fn test_1() {
         let mut runtime = create_runtime();
@@ -397,6 +443,7 @@ mod tests {
         println!("Follower: {}", follower);
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
+        let (follower_server, _) = nodes.get(&follower).unwrap();
 
         // begin a mutable transaction
         let mut tx1 = leader_server
@@ -421,11 +468,7 @@ mod tests {
             .append_tx(result1.tx_offset, result1.tx_data);
 
         // check that replicated offset is the same for all nodes
-        for server in nodes.values() {
-            let replicated_tx = server.0.lock().unwrap().data_store.get_replicated_offset();
-
-            println!("Replicated offset: {:?}", replicated_tx);
-        }
+        print_replicated_offset(&nodes);
 
         std::thread::sleep(WAIT_DECIDED_TIMEOUT);
 
@@ -439,49 +482,122 @@ mod tests {
         }
 
         // check the data stores for all nodes
-        for server in nodes.values() {
-            let tx = &server
-                .0
-                .lock()
-                .unwrap()
-                .begin_tx(DurabilityLevel::Replicated);
-            let value = tx.get(&"foo".to_string());
-            println!(
-                "Server: {:?}, Data store (DurabilityLevel:Replicated): {:?}",
-                server.0.lock().unwrap().node_id,
-                value
-            );
-        }
+        print_replicated_txs(&nodes);
 
         // check that replicated offset is the same for all nodes
-        for server in nodes.values() {
-            let replicated_tx = server.0.lock().unwrap().data_store.get_replicated_offset();
-
-            println!("Replicated offset: {:?}", replicated_tx);
-        }
+        print_replicated_offset(&nodes);
 
         // check that the committed transactions are the same for all nodes
-        for server in nodes.values() {
-            let committed_ents = server
-                .0
-                .lock()
-                .unwrap()
-                .omni_paxos_durability
-                .omni_paxos
-                .read_decided_suffix(0)
-                .expect("Failed to read from OmniPaxos log");
+        print_decided_log(&nodes);
+    }
 
-            for ent in committed_ents {
-                if let LogEntry::Decided(log) = ent {
-                    println!(
-                        "Server: {:?}, Decided log: {:?}",
-                        server.0.lock().unwrap().node_id,
-                        log
-                    );
-                }
-                // ignore uncommitted entries
-            }
+    /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
+    #[test]
+    fn test_2() {
+        let mut runtime = create_runtime();
+        let nodes = spawn_nodes(&mut runtime);
+        assert_eq!(nodes.len(), 3);
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let (first_server, _) = nodes.get(&1).unwrap();
+
+        let leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+
+        println!("Leader elected: {}", leader);
+        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
+        println!("Follower: {}", follower);
+
+        let (leader_server, leader_join_handle) = nodes.get(&leader).unwrap();
+        let (follower_server, _) = nodes.get(&follower).unwrap();
+        // begin a mutable transaction
+        let mut tx1 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx1.set("foo".to_string(), "bar".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx1.get(&"foo".to_string())
+        );
+        let result1 = leader_server.lock().unwrap().commit_mut_tx(tx1).unwrap();
+
+        // append a transaction to the OmniPaxos log
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .append_tx(result1.tx_offset, result1.tx_data);
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+        for server in nodes.values() {
+            println!(
+                "Applying replicated txns for server: {:?}",
+                server.0.lock().unwrap().node_id
+            );
+            server.0.lock().unwrap().apply_replicated_txns();
         }
+
+        // check the data stores for all nodes
+        print_replicated_txs(&nodes);
+
+        // check that replicated offset is the same for all nodes
+        print_replicated_offset(&nodes);
+
+        // check that the committed transactions are the same for all nodes
+        print_decided_log(&nodes);
+
+        println!("Killing leader: {}...", leader);
+        leader_join_handle.abort();
+        // wait for new leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+
+        let leader = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+        println!("New leader elected: {}", leader);
+
+        let (leader_server, _) = nodes.get(&leader).unwrap();
+
+        // update the leader and follower servers after the leader has been killed
+        for server in nodes.values() {
+            println!(
+                "Applying replicated txns: {:?}",
+                server.0.lock().unwrap().node_id
+            );
+            server.0.lock().unwrap().update_leader();
+        }
+
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+        for server in nodes.values() {
+            println!(
+                "Applying replicated txns for server: {:?}",
+                server.0.lock().unwrap().node_id
+            );
+            server.0.lock().unwrap().apply_replicated_txns();
+        }
+
+        // check the data stores for all nodes
+        print_replicated_txs(&nodes);
+
+        // check that replicated offset is the same for all nodes
+        print_replicated_offset(&nodes);
+
+        // check that the committed transactions are the same for all nodes
+        print_decided_log(&nodes);
     }
 
     /// Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
