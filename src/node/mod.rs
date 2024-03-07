@@ -5,12 +5,10 @@ use crate::datastore::*;
 use crate::durability::omnipaxos_durability::Log;
 use crate::durability::omnipaxos_durability::OmniPaxosDurability;
 use crate::durability::{DurabilityLayer, DurabilityLevel};
-use omnipaxos::messages::{self, *};
+use omnipaxos::messages::*;
 use omnipaxos::util::NodeId;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::hash::Hash;
-use std::iter;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -129,6 +127,7 @@ impl Node {
                 }
 
                 for entry in iter {
+                    println!("Replaying transaction for new leader: {:?}", self.node_id);
                     self.data_store
                         .replay_transaction(&entry.1)
                         .expect("Failed to replay transaction");
@@ -167,6 +166,7 @@ impl Node {
             }
 
             for entry in iter {
+                println!("Replaying transaction for server: {:?}", self.node_id);
                 self.data_store
                     .replay_transaction(&entry.1)
                     .expect("Failed to replay transaction");
@@ -300,6 +300,9 @@ mod tests {
                     omni_paxos: op_config.build(MemoryStorage::default()).unwrap(),
                 },
             )));
+            for neighbor in SERVERS.iter().filter(|&&x| x != server_id) {
+                node.lock().unwrap().add_neighbor(*neighbor);
+            }
             let mut op_server = NodeRunner {
                 node: Arc::clone(&node),
                 incoming: receiver_channels.remove(&server_id).unwrap(),
@@ -418,10 +421,6 @@ mod tests {
 
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
-            println!(
-                "Applying replicated txns for server: {:?}",
-                server.0.lock().unwrap().node_id
-            );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
@@ -483,10 +482,6 @@ mod tests {
 
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
-            println!(
-                "Applying replicated txns for server: {:?}",
-                server.0.lock().unwrap().node_id
-            );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
@@ -576,7 +571,6 @@ mod tests {
         let mut runtime = create_runtime();
         let nodes = spawn_nodes(&mut runtime);
         assert_eq!(nodes.len(), 3);
-        // wait for leader to be elected
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
         let (first_server, _) = nodes.get(&1).unwrap();
 
@@ -589,12 +583,11 @@ mod tests {
             .expect("No leader elected");
 
         println!("Leader elected: {}", leader);
-
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
         println!("Follower: {}", follower);
 
-        let (leader_server, leader_join_handle) = nodes.get(&leader).unwrap();
-
+        let (leader_server, _) = nodes.get(&leader).unwrap();
+        let (follower_server, _) = nodes.get(&follower).unwrap();
         // begin a mutable transaction
         let mut tx1 = leader_server
             .lock()
@@ -608,14 +601,6 @@ mod tests {
             "Committing mutable transaction: {:?}",
             tx1.get(&"foo".to_string())
         );
-
-        // disconnect the leader from the other nodes
-        println!("Killing leader: {}...", leader);
-        leader_join_handle.abort();
-
-        // wait for new leader to be elected...
-        std::thread::sleep(WAIT_LEADER_TIMEOUT);
-
         let result1 = leader_server.lock().unwrap().commit_mut_tx(tx1).unwrap();
 
         // append a transaction to the OmniPaxos log
@@ -637,19 +622,107 @@ mod tests {
         }
 
         // check the data stores for all nodes
+        print_replicated_txs(&nodes, "foo");
+
+        // check that replicated offset is the same for all nodes
+        print_replicated_offset(&nodes);
+
+        // check that the committed transactions are the same for all nodes
+        print_decided_log(&nodes);
+
+        //**************************************DISCONNECT THE LEADER************************************************************************** */
+        println!("Disconnecting leader: {}...", leader);
+
+        // remove all neighbors from the leader server's list of neighbors
+        for server_id in SERVERS.iter().filter(|&&x| x != leader) {
+            leader_server.lock().unwrap().remove_neighbor(*server_id);
+        }
+
+        // remove the leader server from all other nodes list of neighbors
+        for node in nodes.values() {
+            let server_id = node.0.lock().unwrap().node_id;
+            if server_id != leader {
+                node.0.lock().unwrap().remove_neighbor(leader);
+            }
+        }
+
+        // begin another mutable transaction
+        let mut tx2 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx2.set("sec".to_string(), "twice".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx2.get(&"sec".to_string())
+        );
+        leader_server.lock().unwrap().commit_mut_tx(tx2).unwrap();
+
         for server in nodes.values() {
             let tx = &server
                 .0
                 .lock()
                 .unwrap()
                 .data_store
-                .begin_tx(DurabilityLevel::Replicated);
-            let value = tx.get(&"foo".to_string());
+                .begin_tx(DurabilityLevel::Memory);
+            let value = tx.get(&"sec".to_string());
             println!(
-                "Server: {:?}, Data store: {:?}",
+                "Server: {:?}, Data store(Memory level): {:?}",
                 server.0.lock().unwrap().node_id,
                 value
-            )
+            );
         }
+
+        // wait for new leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+
+        let leader = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+        println!("New leader elected: {}", leader);
+
+        // update the leader and follower servers after the leader has been disconnected
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+
+        for server in nodes.values() {
+            println!(
+                "Check leader status for server: {:?}",
+                server.0.lock().unwrap().node_id
+            );
+            server.0.lock().unwrap().update_leader();
+        }
+
+        for server in nodes.values() {
+            server.0.lock().unwrap().apply_replicated_txns();
+        }
+
+        // check the data stores for all nodes
+        for server in nodes.values() {
+            let tx = &server
+                .0
+                .lock()
+                .unwrap()
+                .data_store
+                .begin_tx(DurabilityLevel::Memory);
+            let value = tx.get(&"sec".to_string());
+            println!(
+                "Server: {:?}, Data store(Memory level): {:?}",
+                server.0.lock().unwrap().node_id,
+                value
+            );
+        }
+
+        // check that replicated offset is the same for all nodes
+        print_replicated_offset(&nodes);
+
+        // check that the committed transactions are the same for all nodes
+        print_decided_log(&nodes);
     }
 }
