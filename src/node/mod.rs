@@ -8,6 +8,7 @@ use crate::durability::{DurabilityLayer, DurabilityLevel};
 use omnipaxos::messages::{self, *};
 use omnipaxos::util::NodeId;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::iter;
 use std::sync::{Arc, Mutex};
@@ -28,10 +29,15 @@ pub struct NodeRunner {
     pub node: Arc<Mutex<Node>>,
     pub incoming: mpsc::Receiver<Message<Log>>,
     pub outgoing: HashMap<NodeId, mpsc::Sender<Message<Log>>>,
+    is_disconnected: bool,
 }
 
 impl NodeRunner {
     async fn send_outgoing_msgs(&mut self) {
+        if self.is_disconnected {
+            return;
+        }
+
         let messages = self
             .node
             .lock()
@@ -68,6 +74,10 @@ impl NodeRunner {
                 else => { }
             }
         }
+    }
+
+    pub fn set_disconnected(&mut self, disconnected: bool) {
+        self.is_disconnected = disconnected;
     }
 }
 
@@ -203,7 +213,7 @@ impl Node {
     ) -> Result<(), crate::datastore::error::DatastoreError> {
         let durable_tx_offset = self.omni_paxos_durability.get_durable_tx_offset();
         self.data_store
-            .advance_replicated_durability_offset(durable_tx_offset)
+            .advance_replicated_durability_offset(TxOffset(durable_tx_offset.0 - 1))
     }
 }
 
@@ -289,6 +299,7 @@ mod tests {
                 node: Arc::clone(&node),
                 incoming: receiver_channels.remove(&server_id).unwrap(),
                 outgoing: sender_channels.clone(),
+                is_disconnected: false,
             };
             let join_handle: JoinHandle<()> = runtime.spawn({
                 async move {
