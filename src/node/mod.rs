@@ -247,7 +247,11 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio::task::JoinHandle;
 
+    // for test 1 -> 3 and 4.3
     const SERVERS: [NodeId; 3] = [1, 2, 3];
+
+    // for test 4.1, 4.2
+    // const SERVERS: [NodeId; 5] = [1, 2, 3, 4, 5];
 
     #[allow(clippy::type_complexity)]
     fn initialise_channels() -> (
@@ -724,5 +728,246 @@ mod tests {
 
         // check that the committed transactions are the same for all nodes
         print_decided_log(&nodes);
+    }
+
+    /// Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? NOTE for this test you may need to modify the messaging logic.
+    /// 4.1. Disconnect all nodes from each other except for the first. Verify that the leader changes.
+    #[test]
+    fn test_4_1() {
+        let mut runtime = create_runtime();
+        let nodes = spawn_nodes(&mut runtime);
+        assert_eq!(nodes.len(), 5);
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let (first_server, _) = nodes.get(&1).unwrap();
+        //Here we set C as leader and A as follower in the pic of Quorum-loss scenario
+        let leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+
+        println!("Leader elected: {}", leader);
+        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
+        println!("Follower: {}", follower);
+
+        let (follower_server, _) = nodes.get(&follower).unwrap();
+
+        for server in nodes.values() {
+            let server_id = server.0.lock().unwrap().node_id;
+            //if it matches the A we skip
+            if server_id == *follower {
+                println!("we skip this server because it is id: {}", server_id);
+                continue;
+            } else {
+                // disconnect every node from other nodes except for the first
+                for reciever in nodes.values() {
+                    let reciever_id = reciever.0.lock().unwrap().node_id;
+                    if reciever_id == *follower {
+                        continue;
+                    } else {
+                        server.0.lock().unwrap().remove_neighbor(reciever_id);
+                    }
+                }
+            }
+        }
+
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let new_leader = follower_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+
+        // Check if the leader has changed to A
+        if new_leader == *follower {
+            println!("Leader has changed to QC {}", new_leader);
+        } else {
+            println!("The newLeader is {}", new_leader);
+            panic!("Leader has not changed to QC");
+        }
+    }
+
+    fn test_4_2() {
+        let mut runtime = create_runtime();
+        let nodes = spawn_nodes(&mut runtime);
+        //assert_eq!(nodes.len(), 5);
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let (first_server, _) = nodes.get(&1).unwrap();
+
+        let mut leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+
+        println!("Leader elected: {}", leader);
+        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
+        println!("Follower: {}", follower);
+
+        let (leader_server, leader_join_handle) = nodes.get(&leader).unwrap();
+        let (follower_server, _) = nodes.get(&follower).unwrap();
+
+        // If the first server is the leader, then we force the second server called "first" here
+        if leader == first_server.lock().unwrap().node_id {
+            let (first_server, _) = nodes.get(&2).unwrap();
+        }
+
+        // begin a mutable transaction
+        let mut tx1 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx1.set("foo".to_string(), "bar".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx1.get(&"foo".to_string())
+        );
+        let result1 = leader_server.lock().unwrap().commit_mut_tx(tx1).unwrap();
+
+        // append a transaction to the OmniPaxos log
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .append_tx(result1.tx_offset, result1.tx_data);
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+
+        // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
+        for server in nodes.values() {
+            println!(
+                "Applying replicated txns for server: {:?}",
+                server.0.lock().unwrap().node_id
+            );
+            server.0.lock().unwrap().apply_replicated_txns();
+        }
+
+        // check the data stores for all nodes
+        print_replicated_txs(&nodes, "foo");
+
+        // check that replicated offset is the same for all nodes
+        print_replicated_offset(&nodes);
+
+        // check that the committed transactions are the same for all nodes
+        print_decided_log(&nodes);
+
+        // begin another mutable transaction
+        let mut tx2 = leader_server
+            .lock()
+            .unwrap()
+            .begin_mut_tx()
+            .expect("Failed to begin mutable transaction");
+
+        tx2.set("sec".to_string(), "twice".to_string());
+
+        println!(
+            "Committing mutable transaction: {:?}",
+            tx2.get(&"sec".to_string())
+        );
+        let result2 = leader_server.lock().unwrap().commit_mut_tx(tx2).unwrap();
+
+        // append a transaction to the OmniPaxos log
+        leader_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .append_tx(result2.tx_offset, result2.tx_data);
+
+        std::thread::sleep(WAIT_DECIDED_TIMEOUT);
+        //**************************************KILL THE LEADER************************************************************************** */
+        println!("Killing leader: {}...", leader);
+        leader_join_handle.abort();
+        //delete leader from nodes
+        // wait for new leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+
+        for server_id in nodes.values() {
+            let server_id = server_id.0.lock().unwrap().node_id;
+            if server_id == leader {
+                continue;
+            } else {
+                // disconnect every node from other nodes except for the first
+                todo!();
+            }
+        }
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let new_leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+        if new_leader == first_server.lock().unwrap().node_id {
+            println!("Leader has changed to QC");
+        } else {
+            panic!("Leader has not changed to QC");
+        }
+    }
+
+    /// 4.3. Chained scenario.
+    #[test]
+    fn test_4_3() {
+        let mut runtime = create_runtime();
+        let nodes = spawn_nodes(&mut runtime);
+        assert_eq!(nodes.len(), 3);
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+        let (first_server, _) = nodes.get(&1).unwrap();
+        //Here we set C as leader and A as follower in the pic of Chained scenario
+        let leader = first_server
+            .lock()
+            .unwrap()
+            .omni_paxos_durability
+            .omni_paxos
+            .get_current_leader()
+            .expect("No leader elected");
+
+        println!("Leader elected: {}", leader);
+        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
+        println!("Follower: {}", follower);
+
+        let (follower_server, _) = nodes.get(&follower).unwrap();
+
+        for server in nodes.values() {
+            let server_id = server.0.lock().unwrap().node_id;
+            //if it matches the A we skip
+            if server_id == *follower {
+                println!("we skip this server because it is id: {}", server_id);
+                continue;
+            } else {
+                // disconnect every node from other nodes except for the first
+                for reciever in nodes.values() {
+                    let reciever_id = reciever.0.lock().unwrap().node_id;
+                    if reciever_id == *follower {
+                        continue;
+                    } else {
+                        server.0.lock().unwrap().remove_neighbor(reciever_id);
+                    }
+                }
+            }
+        }
+        //loop for ten rounds to check if the leader has changed
+        for timer in 0..10 {
+            std::thread::sleep(WAIT_LEADER_TIMEOUT);
+            let new_leader = follower_server
+                .lock()
+                .unwrap()
+                .omni_paxos_durability
+                .omni_paxos
+                .get_current_leader()
+                .expect("No leader elected");
+
+            println!("Timer: {}", timer);
+            println!("Leader has changed to {:?}", new_leader);
+        }
     }
 }
