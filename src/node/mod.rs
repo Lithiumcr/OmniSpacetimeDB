@@ -29,15 +29,10 @@ pub struct NodeRunner {
     pub node: Arc<Mutex<Node>>,
     pub incoming: mpsc::Receiver<Message<Log>>,
     pub outgoing: HashMap<NodeId, mpsc::Sender<Message<Log>>>,
-    is_disconnected: bool,
 }
 
 impl NodeRunner {
     async fn send_outgoing_msgs(&mut self) {
-        if self.is_disconnected {
-            return;
-        }
-
         let messages = self
             .node
             .lock()
@@ -47,11 +42,14 @@ impl NodeRunner {
             .outgoing_messages();
         for msg in messages {
             let receiver = msg.get_receiver();
-            let channel = self
-                .outgoing
-                .get_mut(&receiver)
-                .expect("No channel for receiver");
-            let _ = channel.send(msg).await;
+            // check if the receiver is in the nodeId set
+            if self.node.lock().unwrap().neighbors.contains(&receiver) {
+                let channel = self
+                    .outgoing
+                    .get_mut(&receiver)
+                    .expect("No channel for receiver");
+                let _ = channel.send(msg).await;
+            }
         }
     }
 
@@ -69,15 +67,13 @@ impl NodeRunner {
                     self.send_outgoing_msgs().await;
                 }
                 Some(in_msg) = self.incoming.recv() => {
-                    self.node.lock().unwrap().omni_paxos_durability.omni_paxos.handle_incoming(in_msg);
+                    if self.node.lock().unwrap().neighbors.contains(&in_msg.get_sender()) {
+                        self.node.lock().unwrap().omni_paxos_durability.omni_paxos.handle_incoming(in_msg);
+                    }
                 }
                 else => { }
             }
         }
-    }
-
-    pub fn set_disconnected(&mut self, disconnected: bool) {
-        self.is_disconnected = disconnected;
     }
 }
 
@@ -86,17 +82,28 @@ pub struct Node {
     // TODO Datastore and OmniPaxosDurability
     omni_paxos_durability: OmniPaxosDurability,
     data_store: ExampleDatastore,
+    pub neighbors: HashSet<NodeId>,
 }
 
 impl Node {
     pub fn new(node_id: NodeId, omni_durability: OmniPaxosDurability) -> Self {
         let omni_paxos_durability = omni_durability;
         let data_store = ExampleDatastore::new();
+        let neighbors = HashSet::new();
         Node {
             node_id,
             omni_paxos_durability,
             data_store,
+            neighbors,
         }
+    }
+
+    pub fn add_neighbor(&mut self, neighbor: NodeId) {
+        self.neighbors.insert(neighbor);
+    }
+
+    pub fn remove_neighbor(&mut self, neighbor: NodeId) {
+        self.neighbors.remove(&neighbor);
     }
 
     /// update who is the current leader. If a follower becomes the leader,
@@ -287,19 +294,16 @@ mod tests {
                 server_config,
                 cluster_config,
             };
-            let node: Arc<Mutex<Node>> = Arc::new(Mutex::new(
-                Node::new(
-                    server_id,
-                    OmniPaxosDurability {
-                        omni_paxos: op_config.build(MemoryStorage::default()).unwrap(),
-                    },
-                ), // op_config.build(MemoryStorage::default()).unwrap(),
-            ));
+            let node: Arc<Mutex<Node>> = Arc::new(Mutex::new(Node::new(
+                server_id,
+                OmniPaxosDurability {
+                    omni_paxos: op_config.build(MemoryStorage::default()).unwrap(),
+                },
+            )));
             let mut op_server = NodeRunner {
                 node: Arc::clone(&node),
                 incoming: receiver_channels.remove(&server_id).unwrap(),
                 outgoing: sender_channels.clone(),
-                is_disconnected: false,
             };
             let join_handle: JoinHandle<()> = runtime.spawn({
                 async move {
