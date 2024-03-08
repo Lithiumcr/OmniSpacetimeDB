@@ -229,9 +229,7 @@ impl Node {
 /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
 /// 3. Find the leader and commit a transaction. Disconnect the leader from the other nodes and continue to commit transactions before the OmniPaxos election timeout.
 /// Verify that the transaction was first committed in memory but later rolled back.
-/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? NOTE for this test you may need to modify the messaging logic.
-///
-/// A few helper functions to help structure your tests have been defined that you are welcome to use.
+/// 4. Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture.
 #[cfg(test)]
 mod tests {
     use crate::durability::omnipaxos_durability::Log;
@@ -437,7 +435,8 @@ mod tests {
         // check that the committed transactions are the same for all nodes
         print_decided_log(&nodes);
     }
-    /// 2. Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
+
+    /// Find the leader and commit a transaction. Kill the leader and show that another node will be elected and that the replicated state is still correct.
     #[test]
     fn test_2() {
         let mut runtime = create_runtime();
@@ -730,7 +729,7 @@ mod tests {
         print_decided_log(&nodes);
     }
 
-    /// Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture. Does the system recover? NOTE for this test you may need to modify the messaging logic.
+    /// Simulate the 3 partial connectivity scenarios from the OmniPaxos liveness lecture.
     /// 4.1. Disconnect all nodes from each other except for the first. Verify that the leader changes.
     #[test]
     fn test_4_1() {
@@ -988,39 +987,44 @@ mod tests {
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
         println!("Follower: {}", follower);
 
-        let (follower_server, _) = nodes.get(&follower).unwrap();
+        // remove connection between node 2 and 3
+        println!("Removing connection between node 2 and 3...");
 
         for server in nodes.values() {
             let server_id = server.0.lock().unwrap().node_id;
-            //if it matches the A we skip
-            if server_id == *follower {
-                println!("we skip this server because it is id: {}", server_id);
-                continue;
-            } else {
-                // disconnect every node from other nodes except for the first
+            //if it matches node 1 we skip
+            if server_id != *follower {
                 for reciever in nodes.values() {
                     let reciever_id = reciever.0.lock().unwrap().node_id;
-                    if reciever_id == *follower {
-                        continue;
-                    } else {
+                    if reciever_id != *follower && reciever_id != server_id {
+                        println!(
+                            "Server: {:?}, Removing neighbor: {:?}",
+                            server.0.lock().unwrap().node_id,
+                            reciever_id
+                        );
                         server.0.lock().unwrap().remove_neighbor(reciever_id);
                     }
                 }
             }
         }
-        //loop for ten rounds to check if the leader has changed
-        for timer in 0..10 {
-            std::thread::sleep(WAIT_LEADER_TIMEOUT);
-            let new_leader = follower_server
+
+        // wait for new leader to be elected...
+        std::thread::sleep(WAIT_LEADER_TIMEOUT);
+
+        for server in nodes.values() {
+            let leader = server
+                .0
                 .lock()
                 .unwrap()
                 .omni_paxos_durability
                 .omni_paxos
                 .get_current_leader()
                 .expect("No leader elected");
-
-            println!("Timer: {}", timer);
-            println!("Leader has changed to {:?}", new_leader);
+            println!(
+                "Server {:?} following leader {:?}",
+                server.0.lock().unwrap().node_id,
+                leader
+            );
         }
     }
 }
