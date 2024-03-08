@@ -137,7 +137,6 @@ impl Node {
                     .expect("Failed to advance durable offset");
             }
         } else {
-            println!("Rolling back transactions for server: {:?}", self.node_id);
             self.data_store
                 .rollback_to_replicated_durability_offset()
                 .expect("Failed to rollback");
@@ -247,10 +246,10 @@ mod tests {
     use tokio::task::JoinHandle;
 
     // for test 1 -> 3 and 4.3
-    // const SERVERS: [NodeId; 3] = [1, 2, 3];
+    const SERVERS: [NodeId; 3] = [1, 2, 3];
 
     // for test 4.1, 4.2
-    const SERVERS: [NodeId; 5] = [1, 2, 3, 4, 5];
+    // const SERVERS: [NodeId; 5] = [1, 2, 3, 4, 5];
 
     #[allow(clippy::type_complexity)]
     fn initialise_channels() -> (
@@ -622,10 +621,6 @@ mod tests {
 
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
-            println!(
-                "Applying replicated txns for server: {:?}",
-                server.0.lock().unwrap().node_id
-            );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
