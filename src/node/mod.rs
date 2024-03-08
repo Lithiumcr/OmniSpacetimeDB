@@ -137,6 +137,7 @@ impl Node {
                     .expect("Failed to advance durable offset");
             }
         } else {
+            println!("Rolling back transactions for server: {:?}", self.node_id);
             self.data_store
                 .rollback_to_replicated_durability_offset()
                 .expect("Failed to rollback");
