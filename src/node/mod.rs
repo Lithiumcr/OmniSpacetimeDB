@@ -246,10 +246,10 @@ mod tests {
     use tokio::task::JoinHandle;
 
     // for test 1 -> 3 and 4.3
-    const SERVERS: [NodeId; 3] = [1, 2, 3];
+    // const SERVERS: [NodeId; 3] = [1, 2, 3];
 
     // for test 4.1, 4.2
-    // const SERVERS: [NodeId; 5] = [1, 2, 3, 4, 5];
+    const SERVERS: [NodeId; 5] = [1, 2, 3, 4, 5];
 
     #[allow(clippy::type_complexity)]
     fn initialise_channels() -> (
@@ -324,7 +324,11 @@ mod tests {
     fn print_replicated_offset(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
         for server in nodes.values() {
             let replicated_tx = server.0.lock().unwrap().data_store.get_replicated_offset();
-            println!("Replicated offset: {:?}", replicated_tx);
+            println!(
+                "Server {:?}, Replicated offset: {:?}",
+                server.0.lock().unwrap().node_id,
+                replicated_tx
+            );
         }
     }
     fn print_decided_log(nodes: &HashMap<NodeId, (Arc<Mutex<Node>>, JoinHandle<()>)>) {
@@ -838,10 +842,6 @@ mod tests {
 
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes
         for server in nodes.values() {
-            println!(
-                "Applying replicated txns for server: {:?}",
-                server.0.lock().unwrap().node_id
-            );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
@@ -850,9 +850,6 @@ mod tests {
 
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
-
-        // check that the committed transactions are the same for all nodes
-        print_decided_log(&nodes);
 
         // begin another mutable transaction
         let mut tx2 = leader_server
@@ -878,14 +875,9 @@ mod tests {
 
         std::thread::sleep(WAIT_DECIDED_TIMEOUT);
         // apply the committed transactions to the follower servers and advance the replicated offset to all nodes except for the follower
+        // since we want to have outdated logs
         for server in nodes.values() {
-            if server.0.lock().unwrap().node_id == *follower {
-                continue;
-            } else {
-                println!(
-                    "Applying replicated txns for server: {:?}",
-                    server.0.lock().unwrap().node_id
-                );
+            if server.0.lock().unwrap().node_id != *follower {
                 server.0.lock().unwrap().apply_replicated_txns();
             }
         }
@@ -897,23 +889,17 @@ mod tests {
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
 
-        // check that the committed transactions are the same for all nodes
-        print_decided_log(&nodes);
         // *************Delete THE EDGES************************************************************************** */
+        // for A (node 1) we keep all the connections
         println!("Deleting edges...");
         for server in nodes.values() {
             let server_id = server.0.lock().unwrap().node_id;
-            //if it matches the A we skip
-            if server_id == *follower {
-                println!("we skip this server because it is id: {}", server_id);
-                continue;
-            } else {
+            //if it matches A (node 1) we skip
+            if server_id != *follower {
                 // disconnect every node from other nodes except for the first
                 for reciever in nodes.values() {
                     let reciever_id = reciever.0.lock().unwrap().node_id;
-                    if reciever_id == *follower {
-                        continue;
-                    } else {
+                    if reciever_id != *follower {
                         server.0.lock().unwrap().remove_neighbor(reciever_id);
                     }
                 }
@@ -925,7 +911,7 @@ mod tests {
         //delete leader from nodes
         // wait for new leader to be elected...
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
-        let new_leader = follower_server
+        let leader = follower_server
             .lock()
             .unwrap()
             .omni_paxos_durability
@@ -954,16 +940,6 @@ mod tests {
 
         // check that replicated offset is the same for all nodes
         print_replicated_offset(&nodes);
-
-        // check that the committed transactions are the same for all nodes
-        print_decided_log(&nodes);
-
-        println!("Leader has changed to {}", new_leader);
-        // if new_leader == *follower {
-        //     println!("Leader has changed right");
-        // } else {
-        //     panic!("Leader has not changed wrong");
-        // }
     }
 
     /// 4.3. Chained scenario.
