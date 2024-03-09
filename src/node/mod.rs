@@ -527,7 +527,6 @@ mod tests {
         //**************************************KILL THE LEADER************************************************************************** */
         println!("Killing leader: {}...", leader);
         leader_join_handle.abort();
-        //delete leader from nodes
         // wait for new leader to be elected...
         std::thread::sleep(WAIT_LEADER_TIMEOUT);
 
@@ -540,6 +539,7 @@ mod tests {
             .expect("No leader elected");
         println!("New leader elected: {}", leader);
 
+        // delete leader from nodes
         nodes.remove(&3);
 
         // update the leader and follower servers after the leader has been killed
@@ -554,10 +554,6 @@ mod tests {
         }
 
         for server in nodes.values() {
-            // println!(
-            //     "Applying replicated txns for server: {:?}",
-            //     server.0.lock().unwrap().node_id
-            // );
             server.0.lock().unwrap().apply_replicated_txns();
         }
 
