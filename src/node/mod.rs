@@ -981,22 +981,24 @@ mod tests {
         }
 
         // wait for new leader to be elected...
-        std::thread::sleep(WAIT_LEADER_TIMEOUT);
-
-        for server in nodes.values() {
-            let leader = server
-                .0
-                .lock()
-                .unwrap()
-                .omni_paxos_durability
-                .omni_paxos
-                .get_current_leader()
-                .expect("No leader elected");
-            println!(
-                "Server {:?} following leader {:?}",
-                server.0.lock().unwrap().node_id,
-                leader
-            );
+        for timer in 0..10 {
+            std::thread::sleep(WAIT_LEADER_TIMEOUT);
+            println!("Check if there is livelock, time: {}...", timer);
+            for server in nodes.values() {
+                let leader = server
+                    .0
+                    .lock()
+                    .unwrap()
+                    .omni_paxos_durability
+                    .omni_paxos
+                    .get_current_leader()
+                    .expect("No leader elected");
+                println!(
+                    "Server {:?} following leader {:?}",
+                    server.0.lock().unwrap().node_id,
+                    leader
+                );
+            }
         }
     }
 }
