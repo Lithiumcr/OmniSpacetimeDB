@@ -76,8 +76,7 @@ impl NodeRunner {
 }
 
 pub struct Node {
-    node_id: NodeId, // Unique identifier for the node
-    // TODO Datastore and OmniPaxosDurability
+    node_id: NodeId,
     omni_paxos_durability: OmniPaxosDurability,
     data_store: ExampleDatastore,
     pub neighbors: HashSet<NodeId>,
