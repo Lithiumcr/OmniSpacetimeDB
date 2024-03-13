@@ -2,7 +2,6 @@ pub mod example_durability;
 pub mod omnipaxos_durability;
 
 use crate::datastore::{tx_data::TxData, TxOffset};
-use std::sync::Arc;
 
 pub enum DurabilityLevel {
     Memory,
