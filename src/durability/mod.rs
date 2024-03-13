@@ -5,6 +5,7 @@ use crate::datastore::{tx_data::TxData, TxOffset};
 
 pub enum DurabilityLevel {
     Memory,
+    MemoryReplicated,
     Replicated,
 }
 

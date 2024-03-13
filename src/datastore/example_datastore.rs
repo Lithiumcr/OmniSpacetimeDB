@@ -4,7 +4,7 @@ use parking_lot::{
 };
 use std::{collections::HashMap, sync::Arc};
 
-use crate::durability::DurabilityLevel;
+use crate::durability::{self, DurabilityLevel};
 
 use super::{
     tx_data::{
@@ -122,6 +122,7 @@ impl CommittedState {
                     }
                 }
             }
+            DurabilityLevel::MemoryReplicated => {}
             DurabilityLevel::Replicated => {}
         }
         return self.replicated_state.get(key).cloned();
@@ -536,4 +537,28 @@ mod tests {
         let result = datastore2.replay_transaction(&result.tx_data);
         assert!(result.is_err());
     }
+
+    #[test]
+    /// This test tests reading from the memory replicated durability level
+    fn test_example_datastore_read_memory_replicated() {
+        let datastore1 = ExampleDatastore::new();
+        let mut tx1 = datastore1.begin_mut_tx();
+        tx1.set("foo".to_string(), "bar".to_string());
+        let result1 = datastore1.commit_mut_tx(tx1).unwrap();
+
+        let mut tx2 = datastore1.begin_mut_tx();
+        tx2.set("bar".to_string(), "baz".to_string());
+        tx2.delete(&"foo".to_string());
+        let result2 = datastore1.commit_mut_tx(tx2).unwrap();
+
+        let datastore2 = ExampleDatastore::new();
+        datastore2.replay_transaction(&result1.tx_data).unwrap();
+        datastore2.replay_transaction(&result2.tx_data).unwrap();
+
+        let tx2 = datastore2.begin_tx(DurabilityLevel::MemoryReplicated);
+        assert_eq!(tx2.get(&"foo".to_string()), None);
+        assert_eq!(tx2.get(&"bar".to_string()), Some("baz".to_string()));
+        datastore2.release_tx(tx2);
+    }
+
 }
