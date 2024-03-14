@@ -392,7 +392,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
 
-        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
 
