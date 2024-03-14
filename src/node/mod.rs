@@ -392,8 +392,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
 
-        let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
 
@@ -458,7 +456,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         let (leader_server, leader_join_handle) = nodes.get(&leader).unwrap();
         let (follower_server, _) = nodes.get(&follower).unwrap();
@@ -586,7 +583,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
         let (follower_server, _) = nodes.get(&follower).unwrap();
@@ -744,21 +740,25 @@ mod tests {
 
         println!("Leader elected: {}", leader);
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         let (follower_server, _) = nodes.get(&follower).unwrap();
+
+        println!("Disconnecting nodes...");
 
         for server in nodes.values() {
             let server_id = server.0.lock().unwrap().node_id;
             //if it matches the A we skip
-            if server_id == *follower {
-                println!("we skip this server because it is id: {}", server_id);
-            } else {
+            if server_id != *follower {
                 // disconnect every node from other nodes except for the first
-                for reciever in nodes.values() {
-                    let reciever_id = reciever.0.lock().unwrap().node_id;
-                    if reciever_id != *follower {
-                        server.0.lock().unwrap().remove_neighbor(reciever_id);
+                for receiver in nodes.values() {
+                    let receiver_id = receiver.0.lock().unwrap().node_id;
+                    if receiver_id != *follower {
+                        println!(
+                            "Server: {:?}, Removing neighbor: {:?}",
+                            server.0.lock().unwrap().node_id,
+                            receiver_id
+                        );
+                        server.0.lock().unwrap().remove_neighbor(receiver_id);
                     }
                 }
             }
@@ -802,7 +802,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         let (leader_server, _) = nodes.get(&leader).unwrap();
         let (follower_server, _) = nodes.get(&follower).unwrap();
@@ -888,10 +887,10 @@ mod tests {
             //if it matches A (node 1) we skip
             if server_id != *follower {
                 // disconnect every node from other nodes except for the first
-                for reciever in nodes.values() {
-                    let reciever_id = reciever.0.lock().unwrap().node_id;
-                    if reciever_id != *follower {
-                        server.0.lock().unwrap().remove_neighbor(reciever_id);
+                for receiver in nodes.values() {
+                    let receiver_id = receiver.0.lock().unwrap().node_id;
+                    if receiver_id != *follower {
+                        server.0.lock().unwrap().remove_neighbor(receiver_id);
                     }
                 }
             }
@@ -952,7 +951,6 @@ mod tests {
 
         println!("Leader elected: {}", leader);
         let follower = SERVERS.iter().find(|&&x| x != leader).unwrap();
-        println!("Follower: {}", follower);
 
         // remove connection between node 2 and 3
         println!("Removing connection between node 2 and 3...");
@@ -961,15 +959,15 @@ mod tests {
             let server_id = server.0.lock().unwrap().node_id;
             //if it matches node 1 we skip
             if server_id != *follower {
-                for reciever in nodes.values() {
-                    let reciever_id = reciever.0.lock().unwrap().node_id;
-                    if reciever_id != *follower && reciever_id != server_id {
+                for receiver in nodes.values() {
+                    let receiver_id = receiver.0.lock().unwrap().node_id;
+                    if receiver_id != *follower && receiver_id != server_id {
                         println!(
                             "Server: {:?}, Removing neighbor: {:?}",
                             server.0.lock().unwrap().node_id,
-                            reciever_id
+                            receiver_id
                         );
-                        server.0.lock().unwrap().remove_neighbor(reciever_id);
+                        server.0.lock().unwrap().remove_neighbor(receiver_id);
                     }
                 }
             }
